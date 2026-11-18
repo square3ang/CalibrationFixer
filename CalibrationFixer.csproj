@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>CalibrationFixer</AssemblyName>
+    <RootNamespace>CalibrationFixer</RootNamespace>
+    <LangVersion>12</LangVersion>
+    <GameRootDir>/home/square3ang/.local/share/Steam/steamapps/common/A Dance of Fire and Ice/</GameRootDir>
+    <ManagedDir>$(GameRootDir)ADanceOfFireAndIce_Data/Managed/</ManagedDir>
+    <ModDir>$(GameRootDir)Mods/CalibrationFixer/</ModDir>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="src/**/*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="Assembly-CSharp" HintPath="$(ManagedDir)Assembly-CSharp.dll" Private="false" />
+    <Reference Include="RDTools" HintPath="$(ManagedDir)RDTools.dll" Private="false" />
+    <Reference Include="SkyHook.Unity" HintPath="$(ManagedDir)SkyHook.Unity.dll" Private="false" />
+    <Reference Include="UnityEngine.CoreModule" HintPath="$(ManagedDir)UnityEngine.CoreModule.dll" Private="false" />
+    <Reference Include="UnityEngine.AudioModule" HintPath="$(ManagedDir)UnityEngine.AudioModule.dll" Private="false" />
+    <Reference Include="0Harmony" HintPath="$(GameRootDir)UnityModManager/0Harmony.dll" Private="false" />
+    <Reference Include="UnityModManager" HintPath="$(GameRootDir)UnityModManager/UnityModManager.dll" Private="false" />
+  </ItemGroup>
+  <Target Name="Deploy" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <Copy SourceFiles="$(TargetPath);Info.json" DestinationFolder="$(ModDir)" />
+  </Target>
+</Project>

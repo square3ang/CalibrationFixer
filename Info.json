@@ -1,0 +1,10 @@
+{
+  "Id": "CalibrationFixer",
+  "DisplayName": "Calibration Fixer",
+  "Author": "square3ang",
+  "Version": "1.0.0",
+  "ManagerVersion": "0.22.14.0",
+  "HomePage": "https://github.com/square3ang/CalibrationFixer",
+  "AssemblyName": "CalibrationFixer.dll",
+  "EntryMethod": "CalibrationFixer.Main.Load"
+}
