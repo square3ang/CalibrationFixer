@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using CalibrationFixer;
 
@@ -7,48 +8,48 @@ static void Check(bool ok, string message)
     if (!ok) throw new Exception(message);
 }
 
-const long trueOffset = 5_000_000, block = 213_333, frame = 166_667;
-long wall = 0, lastBlock = -1;
-for (int i = 0; i < 600; i++, wall += frame)
-{
-    long dsp = (wall + trueOffset) / block * block;
-    if (dsp != lastBlock) { lastBlock = dsp; DspClock.Observe(wall, dsp - wall); }
-}
-Check(trueOffset - DspClock.Offset is >= 0 and < 20_000, $"converged: {DspClock.Offset}");
-
-DspClock.Observe(wall, -30_000_000);
-Check(DspClock.Offset == -30_000_000, "reset");
-
 var rng = new Random(1);
-for (int i = 0; i < 2000; i++) DspClock.ObserveLag(-0.008 + (rng.NextDouble() - 0.5) * 0.016);
-Check(Math.Abs(DspClock.Lag + 0.008) < 0.002, $"lag: {DspClock.Lag}");
-DspClock.ObserveLag(0.5);
-Check(DspClock.Lag == 0.5, "lag reset");
+double scenarioOffset = 100;
+
+(double vanilla, double withMod) Run(double fps, int bufferSize, int frames, int measureFrom, int stallAt = -1, double stallSeconds = 0)
+{
+    double blockSeconds = bufferSize / 48000.0;
+    double dspMinusWall = scenarioOffset += 10;
+    double now = 1000, prevNow = now, stallStart = double.NaN, gameDsp = 0, lastReported = double.NaN, errorSum = 0;
+    int errorCount = 0;
+    for (int f = 0; f < frames; f++)
+    {
+        now += 1 / fps * (0.8 + 0.4 * rng.NextDouble());
+        if (f == stallAt) stallStart = now;
+        double lost = double.IsNaN(stallStart) ? 0 : Math.Clamp(now - stallStart, 0, stallSeconds);
+        double trueDsp = now + dspMinusWall - lost;
+        double raw = Math.Floor(trueDsp / blockSeconds) * blockSeconds;
+        if (raw != lastReported) gameDsp = lastReported = raw;
+        else gameDsp += now - prevNow;
+        prevNow = now;
+        DspClock.ObserveLag(gameDsp - DspClock.Sample(raw, (long)(now * 1e7)));
+        if (f >= measureFrom) { errorSum += gameDsp - trueDsp; errorCount++; }
+    }
+    double gameClockError = errorSum / errorCount;
+    return (gameClockError * 1000, (gameClockError - DspClock.Lag) * 1000);
+}
+
+var first = Run(60, 1024, 600, 300);
+Check(Math.Abs(first.withMod) < 2, $"converged: {first.withMod:0.00} ms");
+
+double before = DspClock.Lag;
+DspClock.ObserveLag(before + 1);
+Check(Math.Abs(DspClock.Lag - before) < 0.0001, $"one outlier moved the lag by {(DspClock.Lag - before) * 1000:0.000} ms");
 
 foreach (var bufferSize in new[] { 256, 1024, 2048 })
 {
-    double blockSeconds = bufferSize / 48000.0;
-    var vanilla = new System.Collections.Generic.List<double>();
-    var withMod = new System.Collections.Generic.List<double>();
+    var vanilla = new List<double>();
+    var withMod = new List<double>();
     foreach (var fps in new[] { 30.0, 60.0, 144.0, 240.0, 1000.0 })
     {
-        double dspMinusWall = 100 + vanilla.Count * 10 + bufferSize;
-        double now = 1000, prevNow = now, gameDsp = 0, lastReported = double.NaN, errorSum = 0;
-        int errorCount = 0;
-        for (int f = 0; f < 4000; f++)
-        {
-            now += 1 / fps * (0.8 + 0.4 * rng.NextDouble());
-            double trueDsp = now + dspMinusWall;
-            double raw = Math.Floor(trueDsp / blockSeconds) * blockSeconds;
-            if (raw != lastReported) gameDsp = lastReported = raw;
-            else gameDsp += now - prevNow;
-            prevNow = now;
-            DspClock.ObserveLag(gameDsp - DspClock.Sample(raw, (long)(now * 1e7)));
-            if (f >= 2000) { errorSum += gameDsp - trueDsp; errorCount++; }
-        }
-        double gameClockError = errorSum / errorCount;
-        vanilla.Add(gameClockError * 1000);
-        withMod.Add((gameClockError - DspClock.Lag) * 1000);
+        var (v, m) = Run(fps, bufferSize, 4000, 2000);
+        vanilla.Add(v);
+        withMod.Add(m);
     }
     double vanillaSpread = vanilla.Max() - vanilla.Min(), modSpread = withMod.Max() - withMod.Min();
     Console.WriteLine($"buffer {bufferSize}: audio vs game clock at 30/60/144/240/1000 fps (ms)");
@@ -56,6 +57,14 @@ foreach (var bufferSize in new[] { 256, 1024, 2048 })
     Console.WriteLine($"  mod:     {string.Join(", ", withMod.Select(x => x.ToString("0.00")))}  spread {modSpread:0.00}");
     Check(modSpread < 1.5, $"buffer {bufferSize}: audio timing still depends on frame rate ({modSpread:0.00} ms)");
     Check(modSpread < vanillaSpread / 3, $"buffer {bufferSize}: no real improvement over vanilla");
+}
+
+foreach (var stallMs in new[] { 5.0, 20.0, 63.0, 300.0 })
+{
+    Run(400, 1024, 4000, 2000);
+    var (_, m) = Run(400, 1024, 4400, 4200, stallAt: 4000, stallSeconds: stallMs / 1000);
+    Console.WriteLine($"audio stall {stallMs} ms on restart, song scheduled 1 s later: off by {m:0.00} ms");
+    Check(Math.Abs(m) < 2, $"audio stall {stallMs} ms: song off by {m:0.00} ms");
 }
 
 Console.WriteLine("ok");

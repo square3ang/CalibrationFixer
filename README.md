@@ -33,8 +33,8 @@ flowchart LR
 <details>
 <summary>Details</summary>
 
-- **`DspClock.Observe`** keeps the tightest offset between the audio clock and `Stopwatch` over the last 4 seconds. A block is always seen after it was mixed, so the largest offset is the closest to the truth.
-- **`DspClock.ObserveLag`** averages *game clock − smooth clock* every frame.
+- **`DspClock.Observe`** keeps the tightest offset between the audio clock and `Stopwatch` over the last 4 seconds. A block is always seen after it was mixed, so the largest offset is the closest to the truth. A new block was mixed after the previous frame, so each sample also gives an upper limit; older samples above it are dropped at once. This follows the audio clock when it loses time (an audio stall on restart).
+- **`DspClock.ObserveLag`** averages *game clock − smooth clock* every frame. One frame can move it by at most 20 ms × 1/400.
 - When the song is scheduled, that lag is frozen. The song, hit sounds, countdown ticks, hold sounds and `PlaySound` events are all moved by it. So they play exactly when the game's clock reaches their time.
 - On the calibration screen, presses come from the SkyHook queue with their own timestamps. They are turned into song positions the same way a level does (`AsyncInputUtils.GetSongPosition`).
 
@@ -46,12 +46,19 @@ flowchart LR
 
 | Buffer | | 30 FPS | 60 FPS | 144 FPS | 240 FPS | 1000 FPS | Spread |
 |---|---|---:|---:|---:|---:|---:|---:|
-| 256 | Vanilla | −2.63 | −2.66 | −2.65 | −1.78 | −0.49 | 2.17 |
-| | **Mod** | −0.05 | −0.02 | −0.03 | 0.01 | 0.00 | **0.06** |
-| 1024 | Vanilla | −10.63 | −7.20 | −3.41 | −1.98 | −0.49 | 10.14 |
-| | **Mod** | −0.11 | 0.01 | 0.23 | −0.10 | 0.02 | **0.34** |
-| 2048 | Vanilla | −14.43 | −7.70 | −3.29 | −2.00 | −0.51 | 13.92 |
-| | **Mod** | −0.94 | 0.11 | 0.26 | 0.10 | −0.11 | **1.19** |
+| 256 | Vanilla | −2.70 | −2.70 | −2.68 | −1.78 | −0.50 | 2.20 |
+| | **Mod** | 0.00 | 0.01 | 0.03 | 0.03 | 0.02 | **0.03** |
+| 1024 | Vanilla | −10.71 | −7.21 | −3.28 | −2.11 | −0.49 | 10.22 |
+| | **Mod** | −0.16 | −0.04 | −0.02 | −0.04 | 0.00 | **0.16** |
+| 2048 | Vanilla | −14.26 | −7.54 | −3.39 | −2.00 | −0.52 | 13.74 |
+| | **Mod** | −0.37 | 0.05 | 0.02 | 0.02 | −0.08 | **0.42** |
+
+An audio stall on restart, with the song scheduled 1 s later (400 FPS, buffer 1024):
+
+| Stall | 5 ms | 20 ms | 63 ms | 300 ms |
+|---|---:|---:|---:|---:|
+| v1.0.0 | 3.08 | 12.41 | 38.07 | −1.21 |
+| **v1.0.1** | 0.41 | −0.08 | 0.12 | −0.58 |
 
 ## Install
 
@@ -77,7 +84,7 @@ The UMM log shows `Song scheduled, audio shifted by X ms` each time a song start
 ## Limitations
 
 > [!WARNING]
-> - With very low FPS and a large audio buffer (30 FPS, 2048 samples) about 1 ms of difference is left.
+> - With very low FPS and a large audio buffer (30 FPS, 2048 samples) about 0.4 ms of difference is left.
 > - After a big FPS change, the lag average needs a few seconds to settle.
 > - Async calibration needs the SkyHook keyboard hook (X11/XWayland on Linux). Without it, the calibration screen uses normal input.
 > - Judgment itself is vanilla. The game's per-frame clock jitter and its async offset at the start of each attempt are not changed.
