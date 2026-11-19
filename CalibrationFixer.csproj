@@ -4,7 +4,7 @@
     <AssemblyName>CalibrationFixer</AssemblyName>
     <RootNamespace>CalibrationFixer</RootNamespace>
     <LangVersion>12</LangVersion>
-    <GameRootDir>/home/square3ang/.local/share/Steam/steamapps/common/A Dance of Fire and Ice/</GameRootDir>
+    <GameRootDir>$(HOME)/.local/share/Steam/steamapps/common/A Dance of Fire and Ice/</GameRootDir>
     <ManagedDir>$(GameRootDir)ADanceOfFireAndIce_Data/Managed/</ManagedDir>
     <ModDir>$(GameRootDir)Mods/CalibrationFixer/</ModDir>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>

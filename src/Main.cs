@@ -13,6 +13,10 @@ namespace CalibrationFixer
             var harmony = new Harmony(modEntry.Info.Id);
             modEntry.OnToggle = (_, enabled) =>
             {
+                DspClock.Reset();
+                AudioSchedulePatch.Reset();
+                CalibrationPatches.Reset();
+                ConductorLagPatch.seedAsyncOffset = false;
                 if (enabled) harmony.PatchAll(typeof(Main).Assembly);
                 else harmony.UnpatchAll(harmony.Id);
                 return true;

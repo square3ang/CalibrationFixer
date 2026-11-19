@@ -10,7 +10,7 @@ namespace CalibrationFixer
         const long Window = 40_000_000;
         const long Margin = 20_000;
         const double MaxLead = 0.25;
-        const double LagSmoothing = 1.0 / 400;
+        const int LagWindow = 400;
         const double MaxLagStep = 0.02;
 
         static readonly double ticksPerStopwatchTick = 1e7 / Stopwatch.Frequency;
@@ -19,7 +19,7 @@ namespace CalibrationFixer
         static long lastWall;
         static int lastFrame = -1;
         static double now;
-        static bool hasLag;
+        static int lagCount;
 
         public static long Offset { get; private set; }
 
@@ -47,22 +47,42 @@ namespace CalibrationFixer
             return Math.Min((wall + Offset) / 1e7, raw + MaxLead);
         }
 
+        public static void Reset()
+        {
+            samples.Clear();
+            lastRaw = double.NaN;
+            lastWall = 0;
+            lastFrame = -1;
+            now = 0;
+            lagCount = 0;
+            Offset = 0;
+            Lag = 0;
+        }
+
         public static void Observe(long wall, long sample, long maxDelay)
         {
+            long minWall = wall - Window;
             long upper = maxDelay == long.MaxValue ? long.MaxValue : sample + maxDelay + Margin;
-            samples.RemoveAll(s => s.wall < wall - Window || s.sample > upper);
-            samples.Add((wall, sample));
-            long max = long.MinValue;
-            foreach (var s in samples)
+            int write = 0;
+            long max = sample;
+            for (int i = 0; i < samples.Count; i++)
+            {
+                var s = samples[i];
+                if (s.wall < minWall || s.sample > upper) continue;
+                samples[write++] = s;
                 if (s.sample > max) max = s.sample;
+            }
+            if (write < samples.Count) samples.RemoveRange(write, samples.Count - write);
+            samples.Add((wall, sample));
             Offset = max;
         }
 
         public static void ObserveLag(double sample)
         {
-            if (!hasLag) Lag = sample;
-            else Lag += Math.Max(-MaxLagStep, Math.Min(MaxLagStep, sample - Lag)) * LagSmoothing;
-            hasLag = true;
+            if (double.IsNaN(sample) || double.IsInfinity(sample)) return;
+            // Plain average while warming up, so a fresh start settles in seconds at any FPS
+            if (lagCount < LagWindow) lagCount++;
+            Lag += Math.Max(-MaxLagStep, Math.Min(MaxLagStep, sample - Lag)) / lagCount;
         }
     }
 }

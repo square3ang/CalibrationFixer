@@ -17,12 +17,12 @@ namespace CalibrationFixer
 
         static void Postfix(scrConductor __instance)
         {
+            if (AudioListener.pause || !Application.isFocused) return;
             if (seedAsyncOffset && AsyncInputManager.isActive)
             {
                 AsyncInputUtils.UpdateOffsetTime(1L);
                 seedAsyncOffset = false;
             }
-            if (AudioListener.pause || !Application.isFocused) return;
             DspClock.ObserveLag(__instance.dspTime - DspClock.GetNow());
         }
     }
@@ -31,6 +31,8 @@ namespace CalibrationFixer
     static class AudioSchedulePatch
     {
         static double shift;
+
+        public static void Reset() => shift = 0;
 
         static IEnumerable<MethodBase> TargetMethods()
         {
@@ -91,8 +93,7 @@ namespace CalibrationFixer
         static readonly AccessTools.FieldRef<scnCalibration, int> messageNumber =
             AccessTools.FieldRefAccess<scnCalibration, int>("currentMessageNumber");
 
-        static readonly HashSet<AsyncKeyCode> held = new HashSet<AsyncKeyCode>();
-        static readonly Queue<long> pending = new Queue<long>();
+        static readonly PressFilter<AsyncKeyCode> presses = new PressFilter<AsyncKeyCode>();
         static readonly List<SkyHookEvent> events = new List<SkyHookEvent>();
         static long ignoreBefore;
         static long pressTick;
@@ -100,19 +101,26 @@ namespace CalibrationFixer
 
         static bool AsyncOn => Persistence.GetChosenAsynchronousInput() && AsyncInputManager.isActive;
 
+        public static void Reset()
+        {
+            presses.Clear();
+            ignoreBefore = 0;
+            pressTick = 0;
+            asyncSeen = false;
+        }
+
         [HarmonyPostfix, HarmonyPatch("Start")]
         static void StartPostfix()
         {
-            if (Persistence.GetChosenAsynchronousInput())
-            {
-                if (!AsyncInputManager.isActive) AsyncInputManager.ToggleHook(true);
-                ConductorLagPatch.seedAsyncOffset = true;
-            }
             AsyncInputManager.ClearKeys();
-            held.Clear();
-            pending.Clear();
-            pressTick = 0;
-            asyncSeen = false;
+            Reset();
+            if (!Persistence.GetChosenAsynchronousInput()) return;
+            if (!AsyncInputManager.isActive)
+            {
+                try { AsyncInputManager.ToggleHook(true); }
+                catch (Exception e) { Main.Logger?.Log($"Async calibration unavailable, using normal input: {e.Message}"); }
+            }
+            if (AsyncInputManager.isActive) ConductorLagPatch.seedAsyncOffset = true;
         }
 
         [HarmonyPrefix, HarmonyPatch("Update")]
@@ -127,12 +135,8 @@ namespace CalibrationFixer
             if (events.Count > 0) asyncSeen = true;
             events.Sort((a, b) => a.GetTimeInTicks().CompareTo(b.GetTimeInTicks()));
             foreach (var e in events)
-            {
-                var key = new AsyncKeyCode(e.Key, e.Label);
-                if (e.Type != SkyHook.EventType.KeyPressed) held.Remove(key);
-                else if (held.Add(key) && collecting && e.GetTimeInTicks() > ignoreBefore) pending.Enqueue(e.GetTimeInTicks());
-            }
-            if (!collecting) pending.Clear();
+                presses.Add(new AsyncKeyCode(e.Key, e.Label), e.Type == SkyHook.EventType.KeyPressed, e.GetTimeInTicks(), collecting, ignoreBefore);
+            if (!collecting) presses.Pending.Clear();
         }
 
         [HarmonyTranspiler, HarmonyPatch("Update")]
@@ -159,9 +163,9 @@ namespace CalibrationFixer
                 return inputType;
             }
             if (inputType == InputKeyboard) inputType = InputNone;
-            if (inputType == InputNone && pending.Count > 0)
+            if (inputType == InputNone && presses.Pending.Count > 0)
             {
-                pressTick = pending.Dequeue();
+                pressTick = presses.Pending.Dequeue();
                 return InputKeyboard;
             }
             return inputType;
